@@ -82,6 +82,16 @@ class DetectionBaseModel(BaseModel):
             )
         split_data(output_folder, record_confidence=record_confidence)
 
+    @staticmethod
+    def _get_processed_images(output_folder: str) -> [str]:
+        processed_images = []
+        for root, dirs, files in os.walk(output_folder):
+            for file in files:
+                if file.endswith(".jpg"):
+                    processed_images.append(file)
+
+        return processed_images
+
     def label(
         self,
         input_folder: str,
@@ -103,6 +113,8 @@ class DetectionBaseModel(BaseModel):
 
         os.makedirs(output_folder, exist_ok=True)
 
+        processed_images = self._get_processed_images(output_folder)
+
         images_map = {}
         detections_map = {}
 
@@ -113,6 +125,9 @@ class DetectionBaseModel(BaseModel):
         progress_bar = tqdm(files, desc="Labeling images")
         # iterate through images in input_folder
         for f_path in progress_bar:
+            if os.path.basename(f_path) in processed_images:
+                continue
+
             progress_bar.set_description(desc=f"Labeling {f_path}", refresh=True)
             image = cv2.imread(f_path)
 
