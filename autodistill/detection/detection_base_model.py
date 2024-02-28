@@ -58,6 +58,30 @@ class DetectionBaseModel(BaseModel):
             save_text_file(lines=confidence_list, file_path=confidence_path)
             print("Saved confidence file: " + confidence_path)
 
+    def _save_dataset(
+        self,
+        images_map: Dict[str, np.ndarray],
+        detections_map: Dict[str, sv.Detections],
+        output_folder: str,
+        record_confidence: bool,
+    ) -> None:
+        dataset = sv.DetectionDataset(
+            self.ontology.classes(), images_map, detections_map
+        )
+
+        dataset.as_yolo(
+            output_folder + "/images",
+            output_folder + "/annotations",
+            min_image_area_percentage=0.01,
+            data_yaml_path=output_folder + "/data.yaml",
+        )
+
+        if record_confidence is True:
+            self._record_confidence_in_files(
+                output_folder + "/annotations", images_map, detections_map
+            )
+        split_data(output_folder, record_confidence=record_confidence)
+
     def label(
         self,
         input_folder: str,
@@ -69,7 +93,8 @@ class DetectionBaseModel(BaseModel):
         sahi: bool = False,
         record_confidence: bool = False,
         nms_settings: NmsSetting = NmsSetting.NONE,
-    ) -> sv.DetectionDataset:
+        batch_save: int = None,
+    ):  # -> sv.DetectionDataset:
         """
         Label a dataset with the model.
         """
@@ -106,22 +131,14 @@ class DetectionBaseModel(BaseModel):
 
             detections_map[f_path_short] = detections
 
-        dataset = sv.DetectionDataset(
-            self.ontology.classes(), images_map, detections_map
-        )
+            if batch_save is not None and (progress_bar.n + 1) % batch_save == 0:
+                self._save_dataset(
+                    images_map, detections_map, output_folder, record_confidence
+                )
+                images_map = {}
+                detections_map = {}
 
-        dataset.as_yolo(
-            output_folder + "/images",
-            output_folder + "/annotations",
-            min_image_area_percentage=0.01,
-            data_yaml_path=output_folder + "/data.yaml",
-        )
-
-        if record_confidence is True:
-            self._record_confidence_in_files(
-                output_folder + "/annotations", images_map, detections_map
-            )
-        split_data(output_folder, record_confidence=record_confidence)
+        self._save_dataset(images_map, detections_map, output_folder, record_confidence)
 
         if human_in_the_loop:
             roboflow.login()
@@ -133,4 +150,4 @@ class DetectionBaseModel(BaseModel):
             workspace.upload_dataset(output_folder, project_name=roboflow_project)
 
         print("Labeled dataset created - ready for distillation.")
-        return dataset
+        # return dataset
