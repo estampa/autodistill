@@ -19,6 +19,7 @@ from autodistill.core import BaseModel
 from autodistill.helpers import load_image, split_data
 
 from .detection_ontology import DetectionOntology
+from ..core import Ontology
 
 
 class NmsSetting(str, enum.Enum):
@@ -30,6 +31,12 @@ class NmsSetting(str, enum.Enum):
 @dataclass
 class DetectionBaseModel(BaseModel):
     ontology: DetectionOntology
+
+    def __init__(self, ontology: Ontology):
+        super().__init__(ontology=ontology)
+
+        self._annotator = sv.BoxAnnotator()
+        self._label_annotator = sv.LabelAnnotator()
 
     @abstractmethod
     def predict(self, input: str | np.ndarray | Image.Image) -> sv.Detections:
@@ -58,12 +65,26 @@ class DetectionBaseModel(BaseModel):
             save_text_file(lines=confidence_list, file_path=confidence_path)
             print("Saved confidence file: " + confidence_path)
 
+    def _anotate_image(self, image, detections, classes):
+        annotated_frame = self._annotator.annotate(scene=image.copy(), detections=detections)
+
+        labels = [
+            f"{classes[class_id]} {confidence:0.2f}"
+            for _, _, confidence, class_id, _, _ in detections
+        ]
+        annotated_frame = self._label_annotator.annotate(
+            scene=annotated_frame, labels=labels, detections=detections
+        )
+
+        return annotated_frame
+
     def _save_dataset(
         self,
         images_map: Dict[str, np.ndarray],
         detections_map: Dict[str, sv.Detections],
         output_folder: str,
         record_confidence: bool,
+        save_predictions: bool
     ) -> None:
         dataset = sv.DetectionDataset(
             self.ontology.classes(), images_map, detections_map
@@ -75,6 +96,15 @@ class DetectionBaseModel(BaseModel):
             min_image_area_percentage=0.01,
             data_yaml_path=output_folder + "/data.yaml",
         )
+
+        if save_predictions:
+            with sv.ImageSink(target_dir_path=output_folder + "/detections",
+                              overwrite=False) as sink:
+                for image_name, image_data in images_map.items():
+                    detection = detections_map[image_name]
+                    output_image = self._anotate_image(image_data, detection, self.ontology.classes())
+
+                    sink.save_image(image=output_image, image_name=image_name)
 
         if record_confidence is True:
             self._record_confidence_in_files(
@@ -104,6 +134,7 @@ class DetectionBaseModel(BaseModel):
         record_confidence: bool = False,
         nms_settings: NmsSetting = NmsSetting.NONE,
         batch_save: int = None,
+        save_predictions: bool = False,
     ):  # -> sv.DetectionDataset:
         """
         Label a dataset with the model.
@@ -148,12 +179,12 @@ class DetectionBaseModel(BaseModel):
 
             if batch_save is not None and (progress_bar.n + 1) % batch_save == 0:
                 self._save_dataset(
-                    images_map, detections_map, output_folder, record_confidence
+                    images_map, detections_map, output_folder, record_confidence, save_predictions
                 )
                 images_map = {}
                 detections_map = {}
 
-        self._save_dataset(images_map, detections_map, output_folder, record_confidence)
+        self._save_dataset(images_map, detections_map, output_folder, record_confidence, save_predictions)
 
         if human_in_the_loop:
             roboflow.login()
