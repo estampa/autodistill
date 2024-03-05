@@ -35,8 +35,8 @@ class DetectionBaseModel(BaseModel):
     def __init__(self, ontology: Ontology):
         super().__init__(ontology=ontology)
 
-        self._annotator = sv.BoxAnnotator()
-        self._label_annotator = sv.LabelAnnotator()
+        self._annotator = sv.BoxAnnotator(background=False, draw_label=False)
+        self._label_annotator = sv.LabelAnnotator(background=False, shadow=True)
 
     @abstractmethod
     def predict(self, input: str | np.ndarray | Image.Image) -> sv.Detections:
