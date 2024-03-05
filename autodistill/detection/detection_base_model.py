@@ -177,7 +177,7 @@ class DetectionBaseModel(BaseModel):
 
             detections_map[f_path_short] = detections
 
-            if batch_save is not None and (progress_bar.n + 1) % batch_save == 0:
+            if batch_save is not None and (len(images_map) + 1) % batch_save == 0:
                 self._save_dataset(
                     images_map, detections_map, output_folder, record_confidence, save_predictions
                 )
